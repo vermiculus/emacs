@@ -339,7 +339,9 @@ the user.")
 (cl-defgeneric project-files (project &optional dirs)
   "Return a list of files in directories DIRS in PROJECT.
 DIRS is a list of absolute directories; it should be some
-subset of the project root and external roots.
+subset of the project root and external roots. If INCLUDE-VIRTUAL
+is non-nil, files included in the project will be returned even if
+they are not presently on disk.
 
 The default implementation uses `find-program'.  PROJECT is used
 to find the list of ignores for each directory."
@@ -633,7 +635,7 @@ See `project-vc-extra-root-markers' for the marker value format.")
      (funcall project-vc-external-roots-function)))
    (list (project-root project))))
 
-(cl-defmethod project-files ((project (head vc)) &optional dirs)
+(cl-defmethod project-files ((project (head vc)) &optional dirs include-virtual)
   (mapcan
    (lambda (dir)
      (let ((ignores (project--value-in-dir 'project-vc-ignores (nth 2 project)))
@@ -647,7 +649,7 @@ See `project-vc-extra-root-markers' for the marker value format.")
                        (or
                         (not ignores)
                         (version<= "1.9" (vc-git--program-version)))))))
-           (project--vc-list-files dir backend ignores)
+           (project--vc-list-files dir backend ignores include-virtual)
          (project--files-in-directory
           dir
           (project--dir-ignores project dir)))))
@@ -658,7 +660,7 @@ See `project-vc-extra-root-markers' for the marker value format.")
 (declare-function vc-git-command "vc-git")
 (declare-function vc-hg-command "vc-hg")
 
-(defun project--vc-list-files (dir backend extra-ignores)
+(defun project--vc-list-files (dir backend extra-ignores include-virtual)
   (defvar vc-git-use-literal-pathspecs)
   (pcase backend
     (`Git
@@ -672,7 +674,10 @@ See `project-vc-extra-root-markers' for the marker value format.")
             files)
        (setq args (append args
                           '("-c" "--exclude-standard")
-                          (and include-untracked '("-o"))))
+                          (and include-untracked '("-o"))
+                          (and (not include-virtual)
+                               (version<= "2.35" (vc-git--program-version))
+                               '("--sparse"))))
        (when extra-ignores
          (setq args (append args
                             (cons "--"
@@ -704,9 +709,10 @@ See `project-vc-extra-root-markers' for the marker value format.")
                    (mapcar
                     (lambda (file)
                       (unless (member file submodules)
-                        (if project-files-relative-names
-                            file
-                          (concat default-directory file))))
+                        (cond
+                         ((or include-virtual (not (file-exists-p file))) nil)
+                         (project-files-relative-names file)
+                         (t (concat default-directory file)))))
                     (split-string
                      (with-output-to-string
                        (apply #'vc-git-command standard-output 0 nil "ls-files" args))
@@ -721,7 +727,8 @@ See `project-vc-extra-root-markers' for the marker value format.")
                             (project--vc-list-files
                              (concat default-directory module)
                              backend
-                             extra-ignores)))
+                             extra-ignores
+                             include-virtual)))
                        (if project-files-relative-names
                            (mapcar (lambda (file)
                                      (concat (file-name-as-directory module) file))
