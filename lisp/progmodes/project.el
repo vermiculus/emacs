@@ -704,11 +704,11 @@ See `project-vc-extra-root-markers' for the marker value format.")
              (delq nil
                    (mapcar
                     (lambda (file)
-                      (unless (or (member file submodules)
-                                  (eq ?/ (aref file (1- (length file)))))
-                        (if project-files-relative-names
-                            file
-                          (concat default-directory file))))
+                      (cond
+                       ((member file submodules) nil)
+                       ((eq ?/ (aref file (1- (length file)))) nil)
+                       (project-files-relative-names file)
+                       (t (concat default-directory file))))
                     (split-string
                      (with-output-to-string
                        (apply #'vc-git-command standard-output 0 nil "ls-files" args))
