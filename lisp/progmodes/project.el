@@ -663,7 +663,8 @@ See `project-vc-extra-root-markers' for the marker value format.")
   (pcase backend
     (`Git
      (let* ((default-directory (expand-file-name (file-name-as-directory dir)))
-            (args '("-z"))
+            (args `("-z" ,@(when (version<= "2.35" (vc-git--program-version))
+                             '("--sparse"))))
             (vc-git-use-literal-pathspecs nil)
             (include-untracked (project--value-in-dir
                                 'project-vc-include-untracked
@@ -703,7 +704,8 @@ See `project-vc-extra-root-markers' for the marker value format.")
              (delq nil
                    (mapcar
                     (lambda (file)
-                      (unless (member file submodules)
+                      (unless (or (member file submodules)
+                                  (eq ?/ (aref file (1- (length file)))))
                         (if project-files-relative-names
                             file
                           (concat default-directory file))))
